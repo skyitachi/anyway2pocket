@@ -1,24 +1,17 @@
-package main
+package zhihu
 
 import (
-	"bytes"
 	"fmt"
 	"log"
-	"net/http"
 	"net/url"
 	"regexp"
 	"strings"
 
 	"github.com/PuerkitoBio/goquery"
-	"github.com/jasonlvhit/gocron"
+	"github.com/skyitachi/anyway2pocket/common"
 )
 
 const ZHIHU_HOST = "https://www.zhihu.com"
-
-type CollectionItem struct {
-	Url   string
-	Title string
-}
 
 func checkError(err error) {
 	if err != nil {
@@ -52,23 +45,13 @@ func buildNextPageURL(currentURL string, nextURL string) string {
 	return cURL.String()
 }
 
-func download(url string) []byte {
-	req, err := http.NewRequest("GET", url, nil)
-	if err != nil {
-		log.Panic(err)
+// PullCollection crawl zhihu page
+func PullCollection(collectionURL string) {
+	exists := common.URLExists(collectionURL)
+	if exists {
+		log.Println("[PullCollection]: had searched the url " + collectionURL)
+		return
 	}
-	client := &http.Client{}
-	resp, err := client.Do(req)
-	if err != nil {
-		log.Print(err)
-	}
-	defer resp.Body.Close()
-	var buf bytes.Buffer
-	buf.ReadFrom(resp.Body)
-	return buf.Bytes()
-}
-
-func pullCollection(collectionURL string) {
 	log.Println("[PullCollection]: current url " + collectionURL)
 	doc, err := goquery.NewDocument(collectionURL)
 	if err != nil {
@@ -106,16 +89,8 @@ func pullCollection(collectionURL string) {
 			link, ok := s.Attr("href")
 			if ok {
 				nextPageURL := buildNextPageURL(collectionURL, link)
-				pullCollection(nextPageURL)
+				PullCollection(nextPageURL)
 			}
 		}
 	})
-
-}
-
-func main() {
-	//body := download("https://www.zhihu.com/collection/119397553")
-	pullCollection("https://www.zhihu.com/collection/119397553")
-	// gocron.Every(1).Minute().Do(PullCollection, "https://www.zhihu.com/collection/119397553")
-	<-gocron.Start()
 }
