@@ -8,10 +8,7 @@ import (
 	"strings"
 
 	"github.com/PuerkitoBio/goquery"
-	"github.com/skyitachi/anyway2pocket/common"
 )
-
-const ZHIHU_HOST = "https://www.zhihu.com"
 
 func checkError(err error) {
 	if err != nil {
@@ -19,40 +16,23 @@ func checkError(err error) {
 	}
 }
 
-func buildURL(url string) string {
-	matches, err := regexp.Match("zhihu.com", []byte(url))
-	if err != nil {
-		return url
-	}
-	if !matches {
-		return ZHIHU_HOST + url
-	}
-	return url
+const ZHIHU_HOST = "https://www.zhihu.com"
+
+// Zhihu implements Crawler interface
+type Zhihu struct {
+	Name     string
+	CanNext  func(string) bool
+	OnGetURL func(string)
+	PageDone func(string)
 }
 
-func buildNextPageURL(currentURL string, nextURL string) string {
-	cURL, err := url.Parse(currentURL)
-	checkError(err)
-	nURL, err := url.Parse(nextURL)
-	checkError(err)
-	if nURL.Query().Get("page") == "" {
-		log.Println("[NextURL]: next url is wrong " + nextURL)
-		return currentURL
-	}
-	q := cURL.Query()
-	q.Set("page", nURL.Query().Get("page"))
-	cURL.RawQuery = q.Encode()
-	return cURL.String()
-}
-
-// PullCollection crawl zhihu page
-func PullCollection(collectionURL string) {
-	exists := common.URLExists(collectionURL)
-	if exists {
+func (z Zhihu) pullCollection(collectionURL string) {
+	if !z.CanNext(collectionURL) {
 		log.Println("[PullCollection]: had searched the url " + collectionURL)
 		return
 	}
 	log.Println("[PullCollection]: current url " + collectionURL)
+	z.PageDone(collectionURL)
 	doc, err := goquery.NewDocument(collectionURL)
 	if err != nil {
 		log.Fatal(err)
@@ -69,7 +49,7 @@ func PullCollection(collectionURL string) {
 			if child != nil {
 				url, ok := child.Attr("data-entry-url")
 				if ok {
-					fmt.Println(buildURL(url))
+					z.OnGetURL(z.buildURL(url))
 				}
 			}
 		case "Post":
@@ -77,7 +57,7 @@ func PullCollection(collectionURL string) {
 			if child != nil {
 				url, ok := child.Attr("href")
 				if ok {
-					fmt.Println(buildURL(url))
+					z.OnGetURL(z.buildURL(url))
 				}
 			}
 		}
@@ -88,9 +68,40 @@ func PullCollection(collectionURL string) {
 		if text != "下一页" {
 			link, ok := s.Attr("href")
 			if ok {
-				nextPageURL := buildNextPageURL(collectionURL, link)
-				PullCollection(nextPageURL)
+				nextPageURL := z.buildNextPageURL(collectionURL, link)
+				z.pullCollection(nextPageURL)
 			}
 		}
 	})
+}
+
+func (z Zhihu) buildURL(url string) string {
+	matches, err := regexp.Match("zhihu.com", []byte(url))
+	if err != nil {
+		return url
+	}
+	if !matches {
+		return ZHIHU_HOST + url
+	}
+	return url
+}
+
+func (z Zhihu) buildNextPageURL(currentURL string, nextURL string) string {
+	cURL, err := url.Parse(currentURL)
+	checkError(err)
+	nURL, err := url.Parse(nextURL)
+	checkError(err)
+	if nURL.Query().Get("page") == "" {
+		log.Println("[NextURL]: next url is wrong " + nextURL)
+		return currentURL
+	}
+	q := cURL.Query()
+	q.Set("page", nURL.Query().Get("page"))
+	cURL.RawQuery = q.Encode()
+	return cURL.String()
+}
+
+// Start zhihu crawler start
+func (z Zhihu) Start() {
+	z.pullCollection("https://www.zhihu.com/collection/119397553")
 }
