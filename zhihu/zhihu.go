@@ -192,7 +192,7 @@ func (z Zhihu) Start() {
 					z.GetLatestCollection(startUrl)
 				}
 			}(url)
-			gocron.Every(1).Minutes().Do(task)
+			gocron.Every(5).Minutes().Do(task)
 		}
 	} else {
 		log.Fatal("[Zhihu.Start]: cannot get collection.json path")
