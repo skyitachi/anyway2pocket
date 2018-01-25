@@ -1,13 +1,17 @@
 package zhihu
 
 import (
-	"fmt"
+	"encoding/json"
+	"io/ioutil"
 	"log"
 	"net/url"
+	"path"
 	"regexp"
-	"strings"
+	"runtime"
+	"time"
 
 	"github.com/PuerkitoBio/goquery"
+	"github.com/jasonlvhit/gocron"
 )
 
 func checkError(err error) {
@@ -20,24 +24,27 @@ const ZHIHU_HOST = "https://www.zhihu.com"
 
 // Zhihu implements Crawler interface
 type Zhihu struct {
-	Name     string
-	CanNext  func(string) bool
-	OnGetURL func(string)
-	PageDone func(string)
+	Name      string
+	CanNext   func(string) bool
+	OnGetURL  func(string)
+	PageDone  func(string)
+	URLExists func(string) bool
 }
 
-func (z Zhihu) pullCollection(collectionURL string) {
+// PullCollection pull collection url
+func (z Zhihu) PullCollection(collectionURL string) {
 	if !z.CanNext(collectionURL) {
 		log.Println("[PullCollection]: had searched the url " + collectionURL)
 		return
 	}
 	log.Println("[PullCollection]: current url " + collectionURL)
-	z.PageDone(collectionURL)
+	go func() {
+		z.PageDone(collectionURL)
+	}()
 	doc, err := goquery.NewDocument(collectionURL)
 	if err != nil {
 		log.Fatal(err)
 	}
-	fmt.Println(strings.TrimSpace(doc.Find("#zh-fav-head-title").Text()))
 	doc.Find(".zm-item").Each(func(i int, s *goquery.Selection) {
 		dataType, ok := s.Attr("data-type")
 		if !ok {
@@ -65,11 +72,14 @@ func (z Zhihu) pullCollection(collectionURL string) {
 	// 判断是否有分页器
 	doc.Find(".border-pager .zm-invite-pager a").Each(func(i int, s *goquery.Selection) {
 		text := s.Text()
-		if text != "下一页" {
+		if text == "下一页" {
 			link, ok := s.Attr("href")
 			if ok {
 				nextPageURL := z.buildNextPageURL(collectionURL, link)
-				z.pullCollection(nextPageURL)
+				go func() {
+					time.Sleep(1 * time.Second)
+					z.PullCollection(nextPageURL)
+				}()
 			}
 		}
 	})
@@ -101,7 +111,90 @@ func (z Zhihu) buildNextPageURL(currentURL string, nextURL string) string {
 	return cURL.String()
 }
 
-// Start zhihu crawler start
+// GetLatestCollection get all uncrawled url
+func (z Zhihu) GetLatestCollection(collectionURL string) {
+	found := false
+	doc, err := goquery.NewDocument(collectionURL)
+	if err != nil {
+		log.Fatal(err)
+	}
+	doc.Find(".zm-item").Each(func(i int, s *goquery.Selection) {
+		if found {
+			return
+		}
+		dataType, ok := s.Attr("data-type")
+		if !ok {
+			return
+		}
+		switch dataType {
+		case "Answer":
+			child := s.Find(".zm-item-rich-text")
+			if child != nil {
+				url, ok := child.Attr("data-entry-url")
+				if ok {
+					santizedURL := z.buildURL(url)
+					if z.URLExists(santizedURL) {
+						found = true
+					} else {
+						z.OnGetURL(santizedURL)
+					}
+				}
+			}
+		case "Post":
+			child := s.Find(".post-link")
+			if child != nil {
+				url, ok := child.Attr("href")
+				if ok {
+					santizedURL := z.buildURL(url)
+					if z.URLExists(santizedURL) {
+						found = true
+					} else {
+						z.OnGetURL(santizedURL)
+					}
+				}
+			}
+		}
+	})
+	if found {
+		return
+	}
+	// 判断是否有分页器
+	doc.Find(".border-pager .zm-invite-pager a").Each(func(i int, s *goquery.Selection) {
+		text := s.Text()
+		if text == "下一页" {
+			link, ok := s.Attr("href")
+			if ok {
+				nextPageURL := z.buildNextPageURL(collectionURL, link)
+				go func() {
+					time.Sleep(1 * time.Second)
+					z.GetLatestCollection(nextPageURL)
+				}()
+			}
+		}
+	})
+
+}
+
+// Start start cron tasks
 func (z Zhihu) Start() {
-	z.pullCollection("https://www.zhihu.com/collection/119397553")
+	var collectionList []string
+	_, filename, _, ok := runtime.Caller(1)
+	if ok {
+		raw, err := ioutil.ReadFile(path.Join(path.Dir(filename), "zhihu/collection.json"))
+		if err != nil {
+			log.Fatal("[Zhihu.Start]: " + err.Error())
+		}
+		err = json.Unmarshal(raw, &collectionList)
+		for _, url := range collectionList {
+			task := func(startUrl string) func() {
+				return func() {
+					log.Println("[Zhihu.Start]: start url " + startUrl)
+					z.GetLatestCollection(startUrl)
+				}
+			}(url)
+			gocron.Every(1).Minutes().Do(task)
+		}
+	} else {
+		log.Fatal("[Zhihu.Start]: cannot get collection.json path")
+	}
 }
