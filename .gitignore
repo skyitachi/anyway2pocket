@@ -6,3 +6,4 @@ pocket.json
 zhihu/collection.json
 *.log
 deploy.sh
+exclude.txt

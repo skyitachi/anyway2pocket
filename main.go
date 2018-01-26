@@ -11,9 +11,10 @@ import (
 )
 
 func main() {
-	pocketClient := common.NewPocketClient()
 	common.InitLogger("./pocket.log")
 	logger := common.GetLogger()
+
+	pocketClient := common.NewPocketClient()
 	defer logging.Shutdown()
 	dbClient := common.PocketDBClient{
 		DBHost: "localhost",
