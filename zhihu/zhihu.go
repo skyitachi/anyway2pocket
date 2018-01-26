@@ -12,6 +12,7 @@ import (
 
 	"github.com/PuerkitoBio/goquery"
 	"github.com/jasonlvhit/gocron"
+	"github.com/skyitachi/anyway2pocket/common"
 )
 
 func checkError(err error) {
@@ -33,17 +34,19 @@ type Zhihu struct {
 
 // PullCollection pull collection url
 func (z Zhihu) PullCollection(collectionURL string) {
+	logger := common.GetLogger()
 	if !z.CanNext(collectionURL) {
-		log.Println("[PullCollection]: had searched the url " + collectionURL)
+		logger.Info("[PullCollection]: had searched the url " + collectionURL)
 		return
 	}
-	log.Println("[PullCollection]: current url " + collectionURL)
+	logger.Info("[PullCollection]: current url " + collectionURL)
 	go func() {
 		z.PageDone(collectionURL)
 	}()
 	doc, err := goquery.NewDocument(collectionURL)
 	if err != nil {
-		log.Fatal(err)
+		logger.Error("[PullCollection]: " + err.Error())
+		return
 	}
 	doc.Find(".zm-item").Each(func(i int, s *goquery.Selection) {
 		dataType, ok := s.Attr("data-type")
@@ -113,10 +116,12 @@ func (z Zhihu) buildNextPageURL(currentURL string, nextURL string) string {
 
 // GetLatestCollection get all uncrawled url
 func (z Zhihu) GetLatestCollection(collectionURL string) {
+	logger := common.GetLogger()
 	found := false
 	doc, err := goquery.NewDocument(collectionURL)
 	if err != nil {
-		log.Fatal(err)
+		logger.Error(err)
+		return
 	}
 	doc.Find(".zm-item").Each(func(i int, s *goquery.Selection) {
 		if found {
@@ -177,24 +182,25 @@ func (z Zhihu) GetLatestCollection(collectionURL string) {
 
 // Start start cron tasks
 func (z Zhihu) Start() {
+	logger := common.GetLogger()
 	var collectionList []string
 	_, filename, _, ok := runtime.Caller(1)
 	if ok {
 		raw, err := ioutil.ReadFile(path.Join(path.Dir(filename), "zhihu/collection.json"))
 		if err != nil {
-			log.Fatal("[Zhihu.Start]: " + err.Error())
+			logger.Fatal("[Zhihu.Start]: " + err.Error())
 		}
 		err = json.Unmarshal(raw, &collectionList)
 		for _, url := range collectionList {
 			task := func(startUrl string) func() {
 				return func() {
-					log.Println("[Zhihu.Start]: start url " + startUrl)
+					logger.Info("[Zhihu.Start]: start url " + startUrl)
 					z.GetLatestCollection(startUrl)
 				}
 			}(url)
 			gocron.Every(5).Minutes().Do(task)
 		}
 	} else {
-		log.Fatal("[Zhihu.Start]: cannot get collection.json path")
+		logger.Fatal("[Zhihu.Start]: cannot get collection.json path")
 	}
 }

@@ -1,9 +1,9 @@
 package main
 
 import (
-	"log"
 	"time"
 
+	logging "github.com/hhkbp2/go-logging"
 	"github.com/jasonlvhit/gocron"
 	"github.com/motemen/go-pocket/api"
 	"github.com/skyitachi/anyway2pocket/common"
@@ -12,6 +12,9 @@ import (
 
 func main() {
 	pocketClient := common.NewPocketClient()
+	common.InitLogger("./pocket.log")
+	logger := common.GetLogger()
+	defer logging.Shutdown()
 	dbClient := common.PocketDBClient{
 		DBHost: "localhost",
 		DBUser: "skyitachi",
@@ -27,21 +30,21 @@ func main() {
 			}
 			lastUpdated, err := dbClient.GetDateByURL(url)
 			if err != nil {
-				log.Println("get url date error: " + err.Error())
+				logger.Error("[CanNext]: get url date error " + err.Error())
 				return true
 			}
 			if common.GetSecondsDiff(time.Now(), lastUpdated) > 10 {
 				return true
 			}
-			log.Println("success prevent the url " + url)
+			logger.Info("[CanNext]: success prevent the url " + url)
 			return false
 		},
 		OnGetURL: func(url string) {
 			if dbClient.URLExists(url) {
-				log.Println("url has stored in pocket " + url)
+				logger.Info("[OnGetUrl]: url has stored in pocket " + url)
 				return
 			}
-			log.Println("Got URL: " + url)
+			logger.Info("[OnGetUrl]: Got URL: " + url)
 			option := &api.AddOption{
 				URL:   url,
 				Title: "zhihu",
@@ -49,10 +52,13 @@ func main() {
 			}
 			err := pocketClient.Add(option)
 			if err != nil {
-				log.Fatal("add to pocket error: " + err.Error())
+				logger.Error("[]add to pocket error: " + err.Error())
+				return
 			}
-			dbClient.AddURL(url, common.URLStatusFinished)
-			log.Println("add to pocket success: " + url)
+			err = dbClient.AddURL(url, common.URLStatusFinished)
+			if err == nil {
+				logger.Info("add to pocket success: " + url)
+			}
 		},
 		PageDone: func(url string) {
 			dbClient.UpdateURL(url)

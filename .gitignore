@@ -5,3 +5,4 @@ anyway2pocket
 pocket.json
 zhihu/collection.json
 *.log
+deploy.sh
