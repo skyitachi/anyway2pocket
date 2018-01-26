@@ -7,3 +7,4 @@ zhihu/collection.json
 *.log
 deploy.sh
 exclude.txt
+.idea
